@@ -1,8 +1,8 @@
 Home Automation Project
 
-hardware:</br>
+hardware:
 
-software:</br>
+software:
 
-MCP23s17 driver</br>
+MCP23s17 driver
 https://github.com/piface/libmcp23s17
