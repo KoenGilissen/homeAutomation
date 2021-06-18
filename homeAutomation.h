@@ -11,6 +11,13 @@ typedef struct {
 	
 } ioBoard_t;
 
+typedef struct {
+	uint8_t threadRunning;
+	ioBoard_t *board;
+	uint8_t gpioPort;
+	uint8_t portValue;
+}  outputDefinition_t;
+
 uint8_t initIoBoard(ioBoard_t *board, int mcp23s17_fd);
 
 
