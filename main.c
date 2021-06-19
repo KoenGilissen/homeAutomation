@@ -28,9 +28,12 @@ ioBoard_t board2;
 const int bus = 1;
 const int chip_select = 0;
 
+
+outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue);
 void createNewThread(threadListElement **head, threadListElement **tail, outputDefinition_t **def);
 void printThreadList(threadListElement **head, threadListElement **tail);
 void cleanUpthreads(threadListElement **head, threadListElement **tail);
+void cleanUpElement(threadListElement **element);
 
 
   
@@ -68,12 +71,13 @@ void* toggleOutput(void* arg)
   
 int main(void)
 {
-    pthread_t *dynamicThread = NULL;
     threadListElement *head = NULL;
     threadListElement *tail = NULL;
 
 
-    outputDefinition_t *test = (outputDefinition_t *) malloc(sizeof(outputDefinition_t));
+ 
+    
+	/*outputDefinition_t *test = (outputDefinition_t *) malloc(sizeof(outputDefinition_t));
     if(test == NULL)
     {
     	printf("MALLOC failed!\n");
@@ -82,7 +86,7 @@ int main(void)
 	test->threadRunning = 0;
     test->board = &board2;
     test->gpioPort = GPIOA;
-    test->portValue = 0b00010000;  //A4
+    test->portValue = 0b00010000;  //A4*/
 	
 	mcp23s17_fd = mcp23s17_open(bus, chip_select);
 
@@ -112,8 +116,18 @@ int main(void)
 
 
   	pthread_create(dynamicThread, NULL, &toggleOutput, (void*) test);*/
-
-  	createNewThread(&head, &tail, &test);
+	outputDefinition_t *test = NULL;
+	for(int i = 0; i < 10; i++)
+	{
+		test = newOutputDefinition(&board2, GPIOA, 0x10);
+		if(test != NULL)
+		{
+			createNewThread(&head, &tail, &test);
+			sleep(2);
+			cleanUpthreads(&head, &tail);
+		}
+	}
+	
 
 
 /*    while (i < 1) {
@@ -139,12 +153,27 @@ int main(void)
 		pthread_mutex_unlock(&lock);
 		
 		sleep(2);
-	}
-  
-	free(test);
-	free(dynamicThread);
-  
+	}  
     return 0;
+}
+
+	ioBoard_t *board;
+	uint8_t gpioPort;
+	uint8_t portValue;
+
+outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue)
+{
+	outputDefinition_t *od = (outputDefinition_t *) malloc(sizeof(outputDefinition_t));
+    if(od == NULL)
+    {
+    	printf("MALLOC failed!\n");
+    	return NULL;
+    }
+	od->threadRunning = 0;
+    od->board = b;
+    od->gpioPort = gpioPort;
+    od->portValue = portValue;  //A4
+	return od;
 }
 
 void createNewThread(threadListElement **head, threadListElement **tail, outputDefinition_t **def )
@@ -157,9 +186,9 @@ void createNewThread(threadListElement **head, threadListElement **tail, outputD
 		printf("%s\n", "Malloc failed");
 		return;
 	}
+	printf("New thread element @ %p\n", (void*) newThreadEl);
 	newThreadEl->def = *def;
 	newThreadEl->tid = newThread;
-
 
 	if(*head == NULL)
 	{
@@ -175,6 +204,7 @@ void createNewThread(threadListElement **head, threadListElement **tail, outputD
 		pthread_create(newThreadEl->tid, NULL, &toggleOutput, (void*) newThreadEl->def);	
 		(*tail)->next = newThreadEl;
 		*tail = newThreadEl;
+		newThreadEl->next = NULL;
 	}
 }
 
@@ -191,19 +221,50 @@ void printThreadList(threadListElement **head, threadListElement **tail)
 void cleanUpthreads(threadListElement **head, threadListElement **tail)
 {
 	threadListElement *temp = *head;
-	while(temp != NULL)
+	threadListElement *prev = *head;
+
+	if(temp != NULL && temp->def->threadRunning == 0) //HEAD
 	{
-		printf("thread element at %p tid = %ld\n", (void*) temp, *(temp->tid));
-		if(temp->def->threadRunning == 0)
+		temp = (*head)->next;
+		prev = (*head)->next;
+		cleanUpElement(head);
+		*head = prev;
+	}
+
+
+
+	while(temp != NULL) 
+	{
+		if(temp->def->threadRunning == 1) //iterate through the list
 		{
-			printf("Removing Thread\n");
-			free(temp->def);
-			free(temp->tid);
-			if(temp->next == NULL)
+			prev = temp;
+			temp = temp->next;
+		}
+		else
+		{
+			if(temp == *tail)
 			{
-				free(temp);
+				*tail = prev;
+				cleanUpElement(&temp);
+				break;
+			}
+			else
+			{
+				prev->next = temp->next;
+				cleanUpElement(&temp);
+				temp = prev->next;
 			}
 		}
-		temp = temp->next;
 	}
+}
+
+void cleanUpElement(threadListElement **element)
+{
+	printf("Removing Thread @ %p\n", (void*) *element);
+	free((*element)->def);
+	free((*element)->tid);
+	free(*element);
+	*element = NULL;
+	return;
+	
 }
