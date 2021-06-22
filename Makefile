@@ -28,7 +28,7 @@ endif
 
 # Compiler Settings
 CC := gcc
-CFLAGS:= -g -Wall -pedantic -lmcp23s17 -lpthread
+CFLAGS:= -g -Wall -pedantic -lmcp23s17 -lpthread -lgpiod
 
 #Tasks 
 

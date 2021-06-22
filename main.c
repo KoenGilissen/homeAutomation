@@ -9,8 +9,12 @@
 #include "homeAutomation.h"
 
 #define __DEBUG 	1
-
 #define debugPrint(x)  do { if ( __DEBUG ) { printf(x); }} while (0)
+
+#define CONSUMER "WiZard"
+
+
+
 
 typedef struct n{
 	pthread_t * tid;
@@ -18,8 +22,6 @@ typedef struct n{
 	struct n *next;
 } threadListElement;
 
-
-pthread_t * tid[20];
 pthread_mutex_t lock;
 volatile int mcp23s17_fd;
 ioBoard_t board0;
@@ -28,69 +30,56 @@ ioBoard_t board2;
 const int bus = 1;
 const int chip_select = 0;
 
-
 outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue);
 void createNewThread(threadListElement **head, threadListElement **tail, outputDefinition_t **def);
 void printThreadList(threadListElement **head, threadListElement **tail);
 void cleanUpthreads(threadListElement **head, threadListElement **tail);
 void cleanUpElement(threadListElement **element);
 
-
+void* toggleOutput(void* arg);
   
-void* toggleOutput(void* arg)
-{
-	int error = 0;
-	uint8_t currentPortValue = 0;
-	uint8_t newPortValue = 0;
-	error = pthread_detach(pthread_self());
-	if(error != 0)
-		printf("\n%s\n", strerror(error));
-
-	outputDefinition_t * od = arg;
-	if(od == NULL || od->board == NULL)
-	{
-		printf("%s\n", "[ERROR] outputDefinition NULL value");
-		pthread_exit(NULL);
-	}
-	pthread_mutex_lock(&lock);
-	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	newPortValue = currentPortValue | od->portValue;
-	debugPrint("<Thread X Toggle B>\n");
-	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	pthread_mutex_unlock(&lock);
-	usleep(100000); //100ms
-	pthread_mutex_lock(&lock);
-	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	newPortValue = ~od->portValue & currentPortValue;
-	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	debugPrint("</Thread X Toggle B>\n");
-	pthread_mutex_unlock(&lock);
-	od->threadRunning = 0;
-    pthread_exit(NULL);
-}
   
 int main(void)
 {
+	int returnValue = 0;
+	int interruptValues = 0;
+
+	/*
+		https://github.com/starnight/libgpiod-example/blob/master/libgpiod-input/main.c
+		$ sudo gpioinfo
+		P9_11 --> gpiochip0 line 30
+		P9_12 --> gpiochip1 line 28
+		P9_13 --> gpiochip0 line 31
+		P9_14 --> gpiochip1 line 18
+		P9_15 --> gpiochip1 line 16
+		P9_16 --> gpiochip1 line 19
+	*/
+
+	const unsigned int lineNumberB0A = 30;
+	const unsigned int lineNumberB0B = 28;
+	const unsigned int lineNumberB1A = 31;
+	const unsigned int lineNumberB1B = 18;
+	const unsigned int lineNumberB2A = 16;
+	const unsigned int lineNumberB2B = 19;
+
+
+	char *chipname0 = "gpiochip0";
+	char *chipname1 = "gpiochip1";
+	struct gpiod_chip *chip0;
+	struct gpiod_chip *chip1;
+
+	struct gpiod_line *intB0A;
+	struct gpiod_line *intB0B;
+	struct gpiod_line *intB1A;
+	struct gpiod_line *intB1B;
+	struct gpiod_line *intB2A;
+	struct gpiod_line *intB2B;
+
     threadListElement *head = NULL;
     threadListElement *tail = NULL;
-
-
- 
-    
-	/*outputDefinition_t *test = (outputDefinition_t *) malloc(sizeof(outputDefinition_t));
-    if(test == NULL)
-    {
-    	printf("MALLOC failed!\n");
-    	return -1;
-    }
-	test->threadRunning = 0;
-    test->board = &board2;
-    test->gpioPort = GPIOA;
-    test->portValue = 0b00010000;  //A4*/
 	
 	mcp23s17_fd = mcp23s17_open(bus, chip_select);
 
-	
 	board0.outputHardwareAddress = 0;
 	board0.inputHardwareAddress = 1;
 	
@@ -105,61 +94,77 @@ int main(void)
 	initIoBoard(&board1, mcp23s17_fd);
 	initIoBoard(&board2, mcp23s17_fd);
 	pthread_mutex_unlock(&lock);
-  
-	
-  	/*dynamicThread = (pthread_t * ) malloc(sizeof(pthread_t));
-  	if(dynamicThread == NULL)
-    {
-    	printf("MALLOC failed!\n");
-    	return -1;
-    }
 
+	chip0 = gpiod_chip_open_by_name(chipname0);
+	chip1 = gpiod_chip_open_by_name(chipname1);
+	if (!chip0 || !chip1) {
+		perror("Open chip failed\n");
+		exit(EXIT_FAILURE);
+	}
 
-  	pthread_create(dynamicThread, NULL, &toggleOutput, (void*) test);*/
-	outputDefinition_t *test = NULL;
+	intB0A = gpiod_chip_get_line(chip0, lineNumberB0A);
+	intB0B = gpiod_chip_get_line(chip1, lineNumberB0B);
+	intB1A = gpiod_chip_get_line(chip0, lineNumberB1A);
+	intB1B = gpiod_chip_get_line(chip1, lineNumberB1B);
+	intB2A = gpiod_chip_get_line(chip1, lineNumberB2A);
+	intB2B = gpiod_chip_get_line(chip1, lineNumberB2B);
+
+	if (!intB0A || !intB0B || !intB1A || !intB1B || !intB2A || !intB2B) {
+		perror("Get line failed\n");
+		gpiod_chip_close(chip0);
+		gpiod_chip_close(chip1);
+		exit(EXIT_FAILURE);
+	}
+
+	returnValue = gpiod_line_request_input(intB0A, CONSUMER); //0 on success, -1 on failure
+	returnValue = returnValue + gpiod_line_request_input(intB0B, CONSUMER);
+	returnValue = returnValue + gpiod_line_request_input(intB1A, CONSUMER);
+	returnValue = returnValue + gpiod_line_request_input(intB1B, CONSUMER);
+	returnValue = returnValue + gpiod_line_request_input(intB2A, CONSUMER);
+	returnValue = returnValue + gpiod_line_request_input(intB2B, CONSUMER);
+
+	if (returnValue < 0) {
+		perror("Request line as input failed\n");
+		gpiod_line_release(intB0A);
+		gpiod_line_release(intB0B);
+		gpiod_line_release(intB1A);
+		gpiod_line_release(intB1B);
+		gpiod_line_release(intB2A);
+		gpiod_line_release(intB2B);
+		gpiod_chip_close(chip0);
+		gpiod_chip_close(chip1);
+		exit(EXIT_FAILURE);
+	}
+
+  	
+/*	outputDefinition_t *a4 = NULL;
+	outputDefinition_t *a5 = NULL;
 	for(int i = 0; i < 10; i++)
 	{
-		test = newOutputDefinition(&board2, GPIOA, 0x10);
-		if(test != NULL)
+		a4 = newOutputDefinition(&board2, GPIOA, 0x10);
+		a5 = newOutputDefinition(&board2, GPIOA, 0x20);
+		if(a4 != NULL || a5 != NULL)
 		{
-			createNewThread(&head, &tail, &test);
-			sleep(2);
-			cleanUpthreads(&head, &tail);
+			createNewThread(&head, &tail, &a4);
+			createNewThread(&head, &tail, &a5);
+			sleep(1);
 		}
 	}
-	
-
-
-/*    while (i < 1) {
-        error = pthread_create(&(tid[i]), NULL, &toggleOutput, (void*) test);
-        if (error != 0)
-            printf("\nThread can't be created : [%s]", strerror(error));
-        i++;
-    }*/
-	
-	
+	cleanUpthreads(&head, &tail);*/
 	
 	while(1)
 	{
+		interruptValues = 0; // 0011 1111
+		interruptValues =  (gpiod_line_get_value(intB2B) << 5) | (gpiod_line_get_value(intB2A) <<4) | \
+							(gpiod_line_get_value(intB1B) << 3) | (gpiod_line_get_value(intB1A) << 2) | \
+							(gpiod_line_get_value(intB0B) << 1) | (gpiod_line_get_value(intB0A));
+		if(interruptValues > 0)
+			printf("interruptValues = %d\n", interruptValues);
 		
-		pthread_mutex_lock(&lock);
-		debugPrint("<Main Thread Toggle A>\n");
-		mcp23s17_write_reg(0x20, GPIOA, board2.outputHardwareAddress, mcp23s17_fd); //A5
-		pthread_mutex_unlock(&lock);
-		usleep(100000); //100ms
-		pthread_mutex_lock(&lock);
-		mcp23s17_write_reg(0x00, GPIOA, board2.outputHardwareAddress, mcp23s17_fd); //A5
-		debugPrint("</Main Thread Toggle A>\n");
-		pthread_mutex_unlock(&lock);
-		
-		sleep(2);
+		usleep(20000);
 	}  
     return 0;
 }
-
-	ioBoard_t *board;
-	uint8_t gpioPort;
-	uint8_t portValue;
 
 outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue)
 {
@@ -231,8 +236,6 @@ void cleanUpthreads(threadListElement **head, threadListElement **tail)
 		*head = prev;
 	}
 
-
-
 	while(temp != NULL) 
 	{
 		if(temp->def->threadRunning == 1) //iterate through the list
@@ -267,4 +270,37 @@ void cleanUpElement(threadListElement **element)
 	*element = NULL;
 	return;
 	
+}
+
+
+void* toggleOutput(void* arg)
+{
+	int error = 0;
+	uint8_t currentPortValue = 0;
+	uint8_t newPortValue = 0;
+	error = pthread_detach(pthread_self());
+	if(error != 0)
+		printf("\n%s\n", strerror(error));
+
+	outputDefinition_t * od = arg;
+	if(od == NULL || od->board == NULL)
+	{
+		printf("%s\n", "[ERROR] outputDefinition NULL value");
+		pthread_exit(NULL);
+	}
+	pthread_mutex_lock(&lock);
+	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
+	newPortValue = currentPortValue | od->portValue;
+	debugPrint("<Thread X Toggle B>\n");
+	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
+	pthread_mutex_unlock(&lock);
+	usleep(100000); //100ms
+	pthread_mutex_lock(&lock);
+	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
+	newPortValue = ~od->portValue & currentPortValue;
+	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
+	debugPrint("</Thread X Toggle B>\n");
+	pthread_mutex_unlock(&lock);
+	od->threadRunning = 0;
+    pthread_exit(NULL);
 }
