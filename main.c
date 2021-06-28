@@ -31,10 +31,10 @@ const int bus = 1;
 const int chip_select = 0;
 
 outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue);
-void createNewThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def);
-void printThreadList(outputThreadInstance **head, outputThreadInstance **tail);
-void cleanUpthreads(outputThreadInstance **head, outputThreadInstance **tail);
-void cleanUpElement(outputThreadInstance **element);
+void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def);
+void printOutputThreadList(outputThreadInstance **head, outputThreadInstance **tail);
+void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tail);
+void cleanUpOutputThreadItem(outputThreadInstance **element);
 
 void* toggleOutput(void* arg);
   
@@ -145,12 +145,12 @@ int main(void)
 		a5 = newOutputDefinition(&board2, GPIOA, 0x20);
 		if(a4 != NULL || a5 != NULL)
 		{
-			createNewThread(&head, &tail, &a4);
-			createNewThread(&head, &tail, &a5);
+			createOutputThread(&head, &tail, &a4);
+			createOutputThread(&head, &tail, &a5);
 			sleep(1);
 		}
 	}
-	cleanUpthreads(&head, &tail);*/
+	cleanUpOuputThreads(&head, &tail);*/
 	
 	while(1)
 	{
@@ -212,7 +212,7 @@ outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t
 	return od;
 }
 
-void createNewThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def )
+void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def )
 {
 	outputThreadInstance* newThreadEl = (outputThreadInstance*) malloc(sizeof(outputThreadInstance));
 	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
@@ -244,7 +244,7 @@ void createNewThread(outputThreadInstance **head, outputThreadInstance **tail, o
 	}
 }
 
-void printThreadList(outputThreadInstance **head, outputThreadInstance **tail)
+void printOutputThreadList(outputThreadInstance **head, outputThreadInstance **tail)
 {
 	outputThreadInstance *temp = *head;
 	while(temp != NULL)
@@ -254,7 +254,7 @@ void printThreadList(outputThreadInstance **head, outputThreadInstance **tail)
 	}
 }
 
-void cleanUpthreads(outputThreadInstance **head, outputThreadInstance **tail)
+void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tail)
 {
 	outputThreadInstance *temp = *head;
 	outputThreadInstance *prev = *head;
@@ -263,7 +263,7 @@ void cleanUpthreads(outputThreadInstance **head, outputThreadInstance **tail)
 	{
 		temp = (*head)->next;
 		prev = (*head)->next;
-		cleanUpElement(head);
+		cleanUpOutputThreadItem(head);
 		*head = prev;
 	}
 
@@ -279,20 +279,20 @@ void cleanUpthreads(outputThreadInstance **head, outputThreadInstance **tail)
 			if(temp == *tail)
 			{
 				*tail = prev;
-				cleanUpElement(&temp);
+				cleanUpOutputThreadItem(&temp);
 				break;
 			}
 			else
 			{
 				prev->next = temp->next;
-				cleanUpElement(&temp);
+				cleanUpOutputThreadItem(&temp);
 				temp = prev->next;
 			}
 		}
 	}
 }
 
-void cleanUpElement(outputThreadInstance **element)
+void cleanUpOutputThreadItem(outputThreadInstance **element)
 {
 	printf("Removing Thread @ %p\n", (void*) *element);
 	free((*element)->def);
