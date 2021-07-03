@@ -13,9 +13,6 @@
 
 #define CONSUMER "WiZard"
 
-
-
-
 typedef struct n{
 	pthread_t * tid;
 	outputDefinition_t *def;
@@ -29,6 +26,8 @@ ioBoard_t board1;
 ioBoard_t board2;
 const int bus = 1;
 const int chip_select = 0;
+outputThreadInstance *head = NULL;
+outputThreadInstance *tail = NULL;
 
 outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue);
 void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def);
@@ -37,7 +36,10 @@ void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tai
 void cleanUpOutputThreadItem(outputThreadInstance **element);
 
 void* toggleOutput(void* arg);
-  
+
+void creatNewInputWatchThread(void);
+void printSomething(void);
+void inputWatchFunc(void);
   
 int main(void)
 {
@@ -75,8 +77,7 @@ int main(void)
 	struct gpiod_line *intB2A;
 	struct gpiod_line *intB2B;
 
-    outputThreadInstance *head = NULL;
-    outputThreadInstance *tail = NULL;
+    
 	
 	mcp23s17_fd = mcp23s17_open(bus, chip_select);
 
@@ -151,6 +152,8 @@ int main(void)
 		}
 	}
 	cleanUpOuputThreads(&head, &tail);*/
+
+	creatNewInputWatchThread();
 	
 	while(1)
 	{
@@ -210,6 +213,18 @@ outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t
     od->gpioPort = gpioPort;
     od->portValue = portValue;  //A4
 	return od;
+}
+
+void creatNewInputWatchThread(void)
+{
+	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
+	if(newThread == NULL)
+	{
+		printf("%s\n", "Malloc failed");
+		return;
+	}
+	debugPrint("Creating new input watch thread\n");
+	pthread_create(newThread, NULL, &inputWatchFunc, NULL);
 }
 
 void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def )
@@ -303,6 +318,31 @@ void cleanUpOutputThreadItem(outputThreadInstance **element)
 	
 }
 
+void printSomething(void)
+{
+	printf("Hello This is me %p\n", printSomething);
+	outputDefinition_t *a4 = NULL;
+	outputDefinition_t *a5 = NULL;
+	for(int i = 0; i < 10; i++)
+	{
+		a4 = newOutputDefinition(&board2, GPIOA, 0x10);
+		a5 = newOutputDefinition(&board2, GPIOA, 0x20);
+		if(a4 != NULL || a5 != NULL)
+		{
+			createOutputThread(&head, &tail, &a4);
+			createOutputThread(&head, &tail, &a5);
+			sleep(1);
+		}
+	}
+	cleanUpOuputThreads(&head, &tail);
+}
+
+void inputWatchFunc(void)
+{
+	debugPrint("Hello from input watch function\n");
+	void (*funcPtr)(void) = &printSomething;
+	(*funcPtr)();
+}
 
 void* toggleOutput(void* arg)
 {
