@@ -8,16 +8,8 @@
 #include "mcp23s17.h"
 #include "homeAutomation.h"
 
-#define __DEBUG 	1
-#define debugPrint(x)  do { if ( __DEBUG ) { printf(x); }} while (0)
 
-#define CONSUMER "WiZard"
 
-typedef struct n{
-	pthread_t * tid;
-	outputDefinition_t *def;
-	struct n *next;
-} outputThreadInstance;
 
 pthread_mutex_t spiLock;
 volatile int mcp23s17_fd;
@@ -28,14 +20,6 @@ const int bus = 1;
 const int chip_select = 0;
 outputThreadInstance *head = NULL;
 outputThreadInstance *tail = NULL;
-
-outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue);
-void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def);
-void printOutputThreadList(outputThreadInstance **head, outputThreadInstance **tail);
-void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tail);
-void cleanUpOutputThreadItem(outputThreadInstance **element);
-
-void* toggleOutput(void* arg);
 
 void creatNewInputWatchThread(void);
 void printSomething(void);
@@ -200,124 +184,6 @@ int main(void)
     return 0;
 }
 
-outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue)
-{
-	outputDefinition_t *od = (outputDefinition_t *) malloc(sizeof(outputDefinition_t));
-    if(od == NULL)
-    {
-    	printf("MALLOC failed!\n");
-    	return NULL;
-    }
-	od->threadRunning = 0;
-    od->board = b;
-    od->gpioPort = gpioPort;
-    od->portValue = portValue;  //A4
-	return od;
-}
-
-void creatNewInputWatchThread(void)
-{
-	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
-	if(newThread == NULL)
-	{
-		printf("%s\n", "Malloc failed");
-		return;
-	}
-	debugPrint("Creating new input watch thread\n");
-	pthread_create(newThread, NULL, &inputWatchFunc, NULL);
-}
-
-void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def )
-{
-	outputThreadInstance* newThreadEl = (outputThreadInstance*) malloc(sizeof(outputThreadInstance));
-	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
-
-	if(newThreadEl == NULL || newThread == NULL)
-	{
-		printf("%s\n", "Malloc failed");
-		return;
-	}
-	printf("New thread element @ %p\n", (void*) newThreadEl);
-	newThreadEl->def = *def;
-	newThreadEl->tid = newThread;
-
-	if(*head == NULL)
-	{
-		(*def)->threadRunning = 1;
-		pthread_create(newThreadEl->tid, NULL, &toggleOutput, (void*) newThreadEl->def);
-		*head = newThreadEl;
-		*tail = newThreadEl;
-		newThreadEl->next = NULL;
-	}
-	else
-	{
-		(*def)->threadRunning = 1;
-		pthread_create(newThreadEl->tid, NULL, &toggleOutput, (void*) newThreadEl->def);	
-		(*tail)->next = newThreadEl;
-		*tail = newThreadEl;
-		newThreadEl->next = NULL;
-	}
-}
-
-void printOutputThreadList(outputThreadInstance **head, outputThreadInstance **tail)
-{
-	outputThreadInstance *temp = *head;
-	while(temp != NULL)
-	{
-		printf("thread element at %p tid = %ld\n", (void*) temp, *(temp->tid));
-		temp = temp->next;
-	}
-}
-
-void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tail)
-{
-	outputThreadInstance *temp = *head;
-	outputThreadInstance *prev = *head;
-
-	if(temp != NULL && temp->def->threadRunning == 0) //HEAD
-	{
-		temp = (*head)->next;
-		prev = (*head)->next;
-		cleanUpOutputThreadItem(head);
-		*head = prev;
-	}
-
-	while(temp != NULL) 
-	{
-		if(temp->def->threadRunning == 1) //iterate through the list
-		{
-			prev = temp;
-			temp = temp->next;
-		}
-		else
-		{
-			if(temp == *tail)
-			{
-				*tail = prev;
-				cleanUpOutputThreadItem(&temp);
-				break;
-			}
-			else
-			{
-				prev->next = temp->next;
-				cleanUpOutputThreadItem(&temp);
-				temp = prev->next;
-			}
-		}
-	}
-}
-
-void cleanUpOutputThreadItem(outputThreadInstance **element)
-{
-	printf("Removing Thread @ %p\n", (void*) *element);
-	free((*element)->def);
-	free((*element)->tid);
-	free(*element);
-	*element = NULL;
-	return;
-	
-}
-
 void printSomething(void)
 {
 	printf("Hello This is me %p\n", printSomething);
@@ -344,34 +210,15 @@ void inputWatchFunc(void)
 	(*funcPtr)();
 }
 
-void* toggleOutput(void* arg)
+void creatNewInputWatchThread(void)
 {
-	int error = 0;
-	uint8_t currentPortValue = 0;
-	uint8_t newPortValue = 0;
-	error = pthread_detach(pthread_self());
-	if(error != 0)
-		printf("\n%s\n", strerror(error));
-
-	outputDefinition_t * od = arg;
-	if(od == NULL || od->board == NULL)
+	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
+	if(newThread == NULL)
 	{
-		printf("%s\n", "[ERROR] outputDefinition NULL value");
-		pthread_exit(NULL);
+		printf("%s\n", "Malloc failed");
+		return;
 	}
-	pthread_mutex_lock(&spiLock);
-	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	newPortValue = currentPortValue | od->portValue;
-	debugPrint("<Thread X Toggle B>\n");
-	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	pthread_mutex_unlock(&spiLock);
-	usleep(100000); //100ms
-	pthread_mutex_lock(&spiLock);
-	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	newPortValue = ~od->portValue & currentPortValue;
-	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	debugPrint("</Thread X Toggle B>\n");
-	pthread_mutex_unlock(&spiLock);
-	od->threadRunning = 0;
-    pthread_exit(NULL);
+	debugPrint("Creating new input watch thread\n");
+	pthread_create(newThread, NULL, &inputWatchFunc, NULL);
 }
+
