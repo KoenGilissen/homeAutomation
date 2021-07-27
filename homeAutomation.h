@@ -47,6 +47,13 @@ typedef struct i{
 		
 } inputThreadInstance;
 
+typedef struct x{
+	pthread_t *tid;
+	uint8_t threadRunning;
+	void *arguments;
+	struct x *next;
+} threadInstance;
+
 uint8_t initIoBoard(ioBoard_t *board, int mcp23s17_fd);
 
 outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue);
@@ -55,6 +62,11 @@ void printOutputThreadList(outputThreadInstance **head, outputThreadInstance **t
 void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tail);
 void cleanUpOutputThreadItem(outputThreadInstance **element);
 void* toggleOutput(void* arg);
+
+void createNewThread(threadInstance **head, threadInstance **tail, void *args, void (*thingToDo)());
+void cleanUpThreads(threadInstance **head, threadInstance **tail);
+void dummyFunc();
+void cleanUpThreadItem(threadInstance **el);
 
 
 #endif

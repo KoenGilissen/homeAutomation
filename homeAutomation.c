@@ -193,3 +193,89 @@ void* toggleOutput(void* arg)
 	od->threadRunning = 0;
     pthread_exit(NULL);
 }
+
+void createNewThread(threadInstance **head, threadInstance **tail, void *args, void (*thingToDo)())
+{
+	threadInstance* newThreadEl = (threadInstance*) malloc(sizeof(threadInstance));
+	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
+
+	if(newThreadEl == NULL || newThread == NULL)
+	{
+		printf("%s\n", "Malloc failed");
+		return;
+	}
+	printf("New thread element @ %p\n", (void*) newThreadEl);
+	newThreadEl->arguments = (int*) *args;
+	newThreadEl->tid = newThread;
+
+	if(*head == NULL)
+	{
+		newThreadEl->threadRunning = 1;
+		pthread_create(newThreadEl->tid, NULL, (void*) &thingToDo, (void*) newThreadEl->arguments);
+		*head = newThreadEl;
+		*tail = newThreadEl;
+		newThreadEl->next = NULL;
+	}
+	else
+	{
+		newThreadEl->threadRunning = 1;
+		pthread_create(newThreadEl->tid, NULL, (void*) &thingToDo, (void*) newThreadEl->arguments);
+		(*tail)->next = newThreadEl;
+		*tail = newThreadEl;
+		newThreadEl->next = NULL;
+	}
+}
+
+void cleanUpThreads(threadInstance **head, threadInstance **tail)
+{
+	threadInstance *temp = *head;
+	threadInstance *prev = *head;
+
+	if(temp != NULL && temp->threadRunning == 0) //HEAD
+	{
+		temp = (*head)->next;
+		prev = (*head)->next;
+		cleanUpThreadItem(head);
+		*head = prev;
+	}
+
+	while(temp != NULL) 
+	{
+		if(temp->threadRunning == 1) //iterate through the list
+		{
+			prev = temp;
+			temp = temp->next;
+		}
+		else
+		{
+			if(temp == *tail)
+			{
+				*tail = prev;
+				cleanUpThreadItem(&temp);
+				break;
+			}
+			else
+			{
+				prev->next = temp->next;
+				cleanUpThreadItem(&temp);
+				temp = prev->next;
+			}
+		}
+	}
+
+}
+
+void cleanUpThreadItem(threadInstance **el)
+{
+	printf("Removing Thread @ %p\n", (void*) *el);
+	free((*el)->arguments);
+	free((*el)->tid);
+	free(*el);
+	*el = NULL;
+	return;
+}
+
+void dummyFunc(void)
+{
+
+}
