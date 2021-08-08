@@ -28,7 +28,7 @@ endif
 
 # Compiler Settings
 CC := gcc
-CFLAGS:= -g -Wall -pedantic -lmcp23s17 -lpthread -lgpiod
+CFLAGS:= -g -Wall -pedantic -lmcp23s17 -lpthread -lgpiod -g
 
 #Tasks 
 
@@ -48,3 +48,4 @@ run:
 clean:
 	@echo "[INFO]: Cleaning $(BUILDDIR)/$(OUTPUT)"
 	rm -fr $(BUILDDIR)/$(OUTPUT)
+	rm -fr $(BUILDDIR)/*.o

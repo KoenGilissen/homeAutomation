@@ -11,6 +11,8 @@
 
 #define __DEBUG 	1
 #define debugPrint(x)  do { if ( __DEBUG ) { printf(x); }} while (0)
+#define handle_error_en(en, msg) do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
+#define handle_error(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
 #define CONSUMER "WiZard"
 
@@ -20,53 +22,28 @@ typedef struct {
 	
 } ioBoard_t;
 
-typedef struct {
-	uint8_t threadRunning;
+typedef struct{
 	ioBoard_t *board;
 	uint8_t gpioPort;
-	uint8_t portValue;
-}  outputDefinition_t;
-
-typedef struct {
-	uint8_t threadRunning;
-	ioBoard_t *board;
-	uint8_t gpioPort;
-	uint8_t portValue;
-}  inputDefinition_t;
-
-typedef struct n{
-	pthread_t * tid;
-	outputDefinition_t *def;
-	struct n *next;
-} outputThreadInstance;
-
-typedef struct i{
-	pthread_t *tid;
-	inputDefinition_t *def;
-	struct i *next;  
-		
-} inputThreadInstance;
+	uint8_t bit;
+} ioLoc;
 
 typedef struct x{
 	pthread_t *tid;
 	uint8_t threadRunning;
-	void *arguments;
+	ioLoc *gpio;
 	struct x *next;
 } threadInstance;
 
 uint8_t initIoBoard(ioBoard_t *board, int mcp23s17_fd);
-
-outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue);
-void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def);
-void printOutputThreadList(outputThreadInstance **head, outputThreadInstance **tail);
-void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tail);
-void cleanUpOutputThreadItem(outputThreadInstance **element);
 void* toggleOutput(void* arg);
 
-void createNewThread(threadInstance **head, threadInstance **tail, void *args, void (*thingToDo)());
-void cleanUpThreads(threadInstance **head, threadInstance **tail);
-void dummyFunc();
+void createNewThread(threadInstance **head, void* (*func)(void *), ioLoc * args);
+void removeFinishedThread(threadInstance **head);
+void * dummyFunc(void *d);
 void cleanUpThreadItem(threadInstance **el);
+ioLoc * newIoLoc(ioBoard_t *board, uint8_t port, uint8_t bit);
+void printOutputThreadList(threadInstance **head);
 
 
 #endif

@@ -56,112 +56,6 @@ uint8_t initIoBoard(ioBoard_t *board, int mcp23s17_fd)
 	return 1;
 }
 
-outputDefinition_t * newOutputDefinition(ioBoard_t *b, uint8_t gpioPort, uint8_t portValue)
-{
-	outputDefinition_t *od = (outputDefinition_t *) malloc(sizeof(outputDefinition_t));
-    if(od == NULL)
-    {
-    	printf("MALLOC failed!\n");
-    	return NULL;
-    }
-	od->threadRunning = 0;
-    od->board = b;
-    od->gpioPort = gpioPort;
-    od->portValue = portValue;  //A4
-	return od;
-}
-
-void createOutputThread(outputThreadInstance **head, outputThreadInstance **tail, outputDefinition_t **def )
-{
-	outputThreadInstance* newThreadEl = (outputThreadInstance*) malloc(sizeof(outputThreadInstance));
-	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
-
-	if(newThreadEl == NULL || newThread == NULL)
-	{
-		printf("%s\n", "Malloc failed");
-		return;
-	}
-	printf("New thread element @ %p\n", (void*) newThreadEl);
-	newThreadEl->def = *def;
-	newThreadEl->tid = newThread;
-
-	if(*head == NULL)
-	{
-		(*def)->threadRunning = 1;
-		pthread_create(newThreadEl->tid, NULL, &toggleOutput, (void*) newThreadEl->def);
-		*head = newThreadEl;
-		*tail = newThreadEl;
-		newThreadEl->next = NULL;
-	}
-	else
-	{
-		(*def)->threadRunning = 1;
-		pthread_create(newThreadEl->tid, NULL, &toggleOutput, (void*) newThreadEl->def);	
-		(*tail)->next = newThreadEl;
-		*tail = newThreadEl;
-		newThreadEl->next = NULL;
-	}
-}
-
-void printOutputThreadList(outputThreadInstance **head, outputThreadInstance **tail)
-{
-	outputThreadInstance *temp = *head;
-	while(temp != NULL)
-	{
-		printf("thread element at %p tid = %ld\n", (void*) temp, *(temp->tid));
-		temp = temp->next;
-	}
-}
-
-void cleanUpOuputThreads(outputThreadInstance **head, outputThreadInstance **tail)
-{
-	outputThreadInstance *temp = *head;
-	outputThreadInstance *prev = *head;
-
-	if(temp != NULL && temp->def->threadRunning == 0) //HEAD
-	{
-		temp = (*head)->next;
-		prev = (*head)->next;
-		cleanUpOutputThreadItem(head);
-		*head = prev;
-	}
-
-	while(temp != NULL) 
-	{
-		if(temp->def->threadRunning == 1) //iterate through the list
-		{
-			prev = temp;
-			temp = temp->next;
-		}
-		else
-		{
-			if(temp == *tail)
-			{
-				*tail = prev;
-				cleanUpOutputThreadItem(&temp);
-				break;
-			}
-			else
-			{
-				prev->next = temp->next;
-				cleanUpOutputThreadItem(&temp);
-				temp = prev->next;
-			}
-		}
-	}
-}
-
-void cleanUpOutputThreadItem(outputThreadInstance **element)
-{
-	printf("Removing Thread @ %p\n", (void*) *element);
-	free((*element)->def);
-	free((*element)->tid);
-	free(*element);
-	*element = NULL;
-	return;
-	
-}
-
 void* toggleOutput(void* arg)
 {
 	int error = 0;
@@ -169,113 +63,119 @@ void* toggleOutput(void* arg)
 	uint8_t newPortValue = 0;
 	error = pthread_detach(pthread_self());
 	if(error != 0)
-		printf("\n%s\n", strerror(error));
+		handle_error("Toggle output thread: Failed to detach thread\n");
 
-	outputDefinition_t * od = arg;
-	if(od == NULL || od->board == NULL)
+	threadInstance * tI = arg;
+	if(tI == NULL || tI->gpio == NULL)
 	{
-		printf("%s\n", "[ERROR] outputDefinition NULL value");
+		perror("Toggle output thread: NULL arg\n");
 		pthread_exit(NULL);
 	}
 	pthread_mutex_lock(&spiLock);
-	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	newPortValue = currentPortValue | od->portValue;
-	debugPrint("<Thread X Toggle B>\n");
-	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
+	currentPortValue = mcp23s17_read_reg(tI->gpio->gpioPort, tI->gpio->board->outputHardwareAddress, mcp23s17_fd);
+	newPortValue = currentPortValue | tI->gpio->bit;
+	mcp23s17_write_reg(newPortValue, tI->gpio->gpioPort, tI->gpio->board->outputHardwareAddress, mcp23s17_fd);
 	pthread_mutex_unlock(&spiLock);
 	usleep(100000); //100ms
 	pthread_mutex_lock(&spiLock);
-	currentPortValue = mcp23s17_read_reg(od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	newPortValue = ~od->portValue & currentPortValue;
-	mcp23s17_write_reg(newPortValue, od->gpioPort, od->board->outputHardwareAddress, mcp23s17_fd);
-	debugPrint("</Thread X Toggle B>\n");
+	currentPortValue = mcp23s17_read_reg(tI->gpio->gpioPort, tI->gpio->board->outputHardwareAddress, mcp23s17_fd);
+	newPortValue = ~tI->gpio->bit & currentPortValue;
+	mcp23s17_write_reg(newPortValue, tI->gpio->gpioPort, tI->gpio->board->outputHardwareAddress, mcp23s17_fd);
 	pthread_mutex_unlock(&spiLock);
-	od->threadRunning = 0;
+	tI->threadRunning = 0;
     pthread_exit(NULL);
 }
 
-void createNewThread(threadInstance **head, threadInstance **tail, void *args, void (*thingToDo)())
+void createNewThread(threadInstance **head, void* (*func)(void *), ioLoc * args)
 {
+	threadInstance* temp = *head;
 	threadInstance* newThreadEl = (threadInstance*) malloc(sizeof(threadInstance));
 	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
 
 	if(newThreadEl == NULL || newThread == NULL)
-	{
-		printf("%s\n", "Malloc failed");
-		return;
-	}
-	printf("New thread element @ %p\n", (void*) newThreadEl);
-	newThreadEl->arguments = (int*) *args;
+		handle_error("Create new thread: Memory allocation failed\n");
 	newThreadEl->tid = newThread;
-
-	if(*head == NULL)
-	{
-		newThreadEl->threadRunning = 1;
-		pthread_create(newThreadEl->tid, NULL, (void*) &thingToDo, (void*) newThreadEl->arguments);
-		*head = newThreadEl;
-		*tail = newThreadEl;
-		newThreadEl->next = NULL;
-	}
-	else
-	{
-		newThreadEl->threadRunning = 1;
-		pthread_create(newThreadEl->tid, NULL, (void*) &thingToDo, (void*) newThreadEl->arguments);
-		(*tail)->next = newThreadEl;
-		*tail = newThreadEl;
-		newThreadEl->next = NULL;
-	}
+	newThreadEl->gpio = args;
+	newThreadEl->next = (*head);
+	(*head) = newThreadEl;
+	newThreadEl->threadRunning = 1;
+	pthread_create(newThreadEl->tid, NULL, func, (void*) newThreadEl);
 }
 
-void cleanUpThreads(threadInstance **head, threadInstance **tail)
+void removeFinishedThread(threadInstance **head)
 {
 	threadInstance *temp = *head;
 	threadInstance *prev = *head;
-
-	if(temp != NULL && temp->threadRunning == 0) //HEAD
+	if(temp != NULL && temp->threadRunning == 0) //HEAD must be removed
 	{
-		temp = (*head)->next;
-		prev = (*head)->next;
-		cleanUpThreadItem(head);
-		*head = prev;
+		(*head) = (*head)->next;
+		cleanUpThreadItem(&prev);
+		return;		
 	}
 
-	while(temp != NULL) 
+	while(temp != NULL && temp->threadRunning == 1)
 	{
-		if(temp->threadRunning == 1) //iterate through the list
-		{
-			prev = temp;
-			temp = temp->next;
-		}
-		else
-		{
-			if(temp == *tail)
-			{
-				*tail = prev;
-				cleanUpThreadItem(&temp);
-				break;
-			}
-			else
-			{
-				prev->next = temp->next;
-				cleanUpThreadItem(&temp);
-				temp = prev->next;
-			}
-		}
+		prev = temp;
+		temp = temp->next;
 	}
 
+	if(temp == NULL)
+		return;
+
+	prev->next = temp->next;
+	cleanUpThreadItem(&temp);
 }
 
 void cleanUpThreadItem(threadInstance **el)
 {
-	printf("Removing Thread @ %p\n", (void*) *el);
-	free((*el)->arguments);
+	printf("Cleaning thread item: %p\n", *el);
+	if(el == NULL || (*el)->tid == NULL || (*el)->gpio->board == NULL || (*el)->gpio == NULL)
+	{
+		perror("Clean up NULL pointer");
+		return;
+	}
 	free((*el)->tid);
-	free(*el);
+	//free((*el)->gpio->board);
+	free((*el)->gpio);
+	free((*el));
 	*el = NULL;
 	return;
 }
 
-void dummyFunc(void)
+ioLoc * newIoLoc(ioBoard_t *board, uint8_t port, uint8_t bit)
 {
+	ioLoc *nIoLoc = malloc(sizeof(ioLoc));
+	if(nIoLoc == NULL)
+		handle_error("Create new io location: Memory allocation failed\n");
+	nIoLoc->board = board;
+	nIoLoc->gpioPort = port;
+	nIoLoc->bit = bit;
+	return nIoLoc;
+}
 
+void * dummyFunc(void *d)
+{
+	debugPrint("dummy Func!\n");
+	int error = pthread_detach(pthread_self());
+	if(error != 0)
+		printf("\n%s\n", strerror(error));
+	if(d == NULL)
+	{
+		printf("%s\n", "Error: received thread instance in dummy func is NULL");
+	}
+	threadInstance *tI = (threadInstance*) d;
+	sleep(5);
+	tI->threadRunning = 0;
+	pthread_exit(NULL);
+	return NULL;
+}
+
+void printOutputThreadList(threadInstance **head)
+{
+	threadInstance *temp = *head;
+	while(temp != NULL)
+	{
+		printf("thread element at %p tid = %ld\n", (void*) temp, *(temp->tid));
+		temp = temp->next;
+	}
 }

@@ -5,11 +5,9 @@
 
 #include <pthread.h>
 #include <gpiod.h>
+
 #include "mcp23s17.h"
 #include "homeAutomation.h"
-
-
-
 
 pthread_mutex_t spiLock;
 volatile int mcp23s17_fd;
@@ -18,51 +16,43 @@ ioBoard_t board1;
 ioBoard_t board2;
 const int bus = 1;
 const int chip_select = 0;
-outputThreadInstance *head = NULL;
-outputThreadInstance *tail = NULL;
 
-void creatNewInputWatchThread(void);
-void printSomething(void);
-void inputWatchFunc(void);
-  
+//https://github.com/starnight/libgpiod-example/blob/master/libgpiod-input/main.c
+//$ sudo gpioinfo
+//P9_11 --> gpiochip0 line 30
+//P9_12 --> gpiochip1 line 28
+//P9_13 --> gpiochip0 line 31
+//P9_14 --> gpiochip1 line 18
+//P9_15 --> gpiochip1 line 16
+//P9_16 --> gpiochip1 line 19
+const unsigned int lineNumberB0A = 30;
+const unsigned int lineNumberB0B = 28;
+const unsigned int lineNumberB1A = 31;
+const unsigned int lineNumberB1B = 18;
+const unsigned int lineNumberB2A = 16;
+const unsigned int lineNumberB2B = 19;
+
+char *chipname0 = "gpiochip0";
+char *chipname1 = "gpiochip1";
+struct gpiod_chip *chip0;
+struct gpiod_chip *chip1;
+
+struct gpiod_line *intB0A;
+struct gpiod_line *intB0B;
+struct gpiod_line *intB1A;
+struct gpiod_line *intB1B;
+struct gpiod_line *intB2A;
+struct gpiod_line *intB2B;
+
+threadInstance *head = NULL;
+
 int main(void)
 {
+	printf("Program starting\n");
+
 	int returnValue = 0;
 	int interruptValues = 0;
 
-	/*
-		https://github.com/starnight/libgpiod-example/blob/master/libgpiod-input/main.c
-		$ sudo gpioinfo
-		P9_11 --> gpiochip0 line 30
-		P9_12 --> gpiochip1 line 28
-		P9_13 --> gpiochip0 line 31
-		P9_14 --> gpiochip1 line 18
-		P9_15 --> gpiochip1 line 16
-		P9_16 --> gpiochip1 line 19
-	*/
-
-	const unsigned int lineNumberB0A = 30;
-	const unsigned int lineNumberB0B = 28;
-	const unsigned int lineNumberB1A = 31;
-	const unsigned int lineNumberB1B = 18;
-	const unsigned int lineNumberB2A = 16;
-	const unsigned int lineNumberB2B = 19;
-
-
-	char *chipname0 = "gpiochip0";
-	char *chipname1 = "gpiochip1";
-	struct gpiod_chip *chip0;
-	struct gpiod_chip *chip1;
-
-	struct gpiod_line *intB0A;
-	struct gpiod_line *intB0B;
-	struct gpiod_line *intB1A;
-	struct gpiod_line *intB1B;
-	struct gpiod_line *intB2A;
-	struct gpiod_line *intB2B;
-
-    
-	
 	mcp23s17_fd = mcp23s17_open(bus, chip_select);
 
 	board0.outputHardwareAddress = 0;
@@ -122,22 +112,23 @@ int main(void)
 	}
 
   	
-/*	outputDefinition_t *a4 = NULL;
-	outputDefinition_t *a5 = NULL;
+	ioLoc *a4 = NULL;
+	ioLoc *a5 = NULL;
 	for(int i = 0; i < 10; i++)
 	{
-		a4 = newOutputDefinition(&board2, GPIOA, 0x10);
-		a5 = newOutputDefinition(&board2, GPIOA, 0x20);
+		a4 = newIoLoc(&board2, GPIOA, 0x10);
+		a5 = newIoLoc(&board2, GPIOA, 0x20);
 		if(a4 != NULL || a5 != NULL)
 		{
-			createOutputThread(&head, &tail, &a4);
-			createOutputThread(&head, &tail, &a5);
+			createNewThread(&head, toggleOutput, a4);
+			createNewThread(&head, toggleOutput, a5);
 			sleep(1);
 		}
 	}
-	cleanUpOuputThreads(&head, &tail);*/
+	
+	while(head != NULL)
+		removeFinishedThread(&head);
 
-	creatNewInputWatchThread();
 	
 	while(1)
 	{
@@ -181,44 +172,5 @@ int main(void)
 		
 		usleep(100000); //100ms 
 	}  
-    return 0;
+    pthread_exit(NULL);
 }
-
-void printSomething(void)
-{
-	printf("Hello This is me %p\n", printSomething);
-	outputDefinition_t *a4 = NULL;
-	outputDefinition_t *a5 = NULL;
-	for(int i = 0; i < 10; i++)
-	{
-		a4 = newOutputDefinition(&board2, GPIOA, 0x10);
-		a5 = newOutputDefinition(&board2, GPIOA, 0x20);
-		if(a4 != NULL || a5 != NULL)
-		{
-			createOutputThread(&head, &tail, &a4);
-			createOutputThread(&head, &tail, &a5);
-			sleep(1);
-		}
-	}
-	cleanUpOuputThreads(&head, &tail);
-}
-
-void inputWatchFunc(void)
-{
-	debugPrint("Hello from input watch function\n");
-	void (*funcPtr)(void) = &printSomething;
-	(*funcPtr)();
-}
-
-void creatNewInputWatchThread(void)
-{
-	pthread_t *newThread = (pthread_t * ) malloc(sizeof(pthread_t));
-	if(newThread == NULL)
-	{
-		printf("%s\n", "Malloc failed");
-		return;
-	}
-	debugPrint("Creating new input watch thread\n");
-	pthread_create(newThread, NULL, &inputWatchFunc, NULL);
-}
-
