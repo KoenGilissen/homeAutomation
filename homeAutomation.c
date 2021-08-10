@@ -22,7 +22,7 @@ uint8_t initIoBoard(ioBoard_t *board, int mcp23s17_fd)
 	//Input MCP23S17
     const uint8_t ioconfigInput = 	BANK_OFF | \
 									SEQOP_OFF | \
-									INT_MIRROR_ON | \
+									INT_MIRROR_OFF | \
 									DISSLW_OFF | \
 									HAEN_ON | \
 									ODR_OFF | \
@@ -46,8 +46,8 @@ uint8_t initIoBoard(ioBoard_t *board, int mcp23s17_fd)
 	against the associated bit in the DEFVAL register. If a
 	bit value is clear, the corresponding I/O pin is compared
 	against the previous value*/
-	mcp23s17_write_reg(0xFF, INTCONA, board->inputHardwareAddress, mcp23s17_fd);
-	mcp23s17_write_reg(0xFF, INTCONB, board->inputHardwareAddress, mcp23s17_fd);
+	mcp23s17_write_reg(0x00, INTCONA, board->inputHardwareAddress, mcp23s17_fd);
+	mcp23s17_write_reg(0x00, INTCONB, board->inputHardwareAddress, mcp23s17_fd);
 	
 	// Enable Interrupt on all pins
 	mcp23s17_write_reg(0xFF, GPINTENA, board->inputHardwareAddress, mcp23s17_fd);
@@ -170,6 +170,25 @@ void * dummyFunc(void *d)
 	return NULL;
 }
 
+void * inputWatch(void * arg)
+{
+	int error = 0;
+	uint8_t currentPortValue = 0;
+	error = pthread_detach(pthread_self());
+	if(error != 0)
+		handle_error("Input watch thread: Failed to detach thread\n");
+
+	threadInstance * tI = arg;
+	if(tI == NULL || tI->gpio == NULL)
+	{
+		perror("Input watch thread: NULL arg\n");
+		pthread_exit(NULL);
+	}
+	pthread_mutex_lock(&spiLock);
+	currentPortValue = mcp23s17_read_reg(tI->gpio->gpioPort, tI->gpio->board->inputHardwareAddress, mcp23s17_fd);
+
+}
+
 void printOutputThreadList(threadInstance **head)
 {
 	threadInstance *temp = *head;
@@ -179,3 +198,26 @@ void printOutputThreadList(threadInstance **head)
 		temp = temp->next;
 	}
 }
+
+uint8_t setBit(uint8_t num)
+{
+    uint8_t position = 0;
+    uint8_t i = 1;
+    
+    if(num == 1)
+        return position;
+    if(num && (!(num & (num - 1)))) //Power of 2 check
+    {
+        while (position < 8 && !(i & num)) 
+        {
+            // Unset current bit and set the next bit in 'i'
+            i = i << 1;
+            // increment position
+            ++position;
+        }
+        return position;
+    }
+    else 
+        return 0xFF;
+}
+

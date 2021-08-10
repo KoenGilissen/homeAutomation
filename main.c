@@ -25,12 +25,12 @@ const int chip_select = 0;
 //P9_14 --> gpiochip1 line 18
 //P9_15 --> gpiochip1 line 16
 //P9_16 --> gpiochip1 line 19
-const unsigned int lineNumberB0A = 30;
-const unsigned int lineNumberB0B = 28;
-const unsigned int lineNumberB1A = 31;
-const unsigned int lineNumberB1B = 18;
-const unsigned int lineNumberB2A = 16;
-const unsigned int lineNumberB2B = 19;
+const unsigned int lineNumberB0A = 30;	// P9_11
+const unsigned int lineNumberB0B = 28;	// P9_12
+const unsigned int lineNumberB1A = 31;	// P9_13
+const unsigned int lineNumberB1B = 18;	// P9_14
+const unsigned int lineNumberB2A = 16;	// P9_15
+const unsigned int lineNumberB2B = 19;	// P9_16
 
 char *chipname0 = "gpiochip0";
 char *chipname1 = "gpiochip1";
@@ -114,7 +114,7 @@ int main(void)
   	
 	ioLoc *a4 = NULL;
 	ioLoc *a5 = NULL;
-	for(int i = 0; i < 10; i++)
+/*	for(int i = 0; i < 10; i++)
 	{
 		a4 = newIoLoc(&board2, GPIOA, 0x10);
 		a5 = newIoLoc(&board2, GPIOA, 0x20);
@@ -124,7 +124,7 @@ int main(void)
 			createNewThread(&head, toggleOutput, a5);
 			sleep(1);
 		}
-	}
+	}*/
 	
 	while(head != NULL)
 		removeFinishedThread(&head);
@@ -138,34 +138,92 @@ int main(void)
 							(gpiod_line_get_value(intB0B) << 1) | (gpiod_line_get_value(intB0A));
 		if(interruptValues > 0)
 		{
-			uint8_t gpioA = 0;
-			uint8_t gpioB = 0;
+			uint8_t gpio = 0;
+			uint8_t bitPos = -1;
 			printf("interruptValues = 0x%.2X\n", interruptValues);
 			switch(interruptValues)
 			{
-				case 0x3: // board 0 port A and B
-					debugPrint("Interrupt from board 0\n");
-					gpioA = mcp23s17_read_reg(GPIOA, board0.inputHardwareAddress, mcp23s17_fd);
-					gpioB = mcp23s17_read_reg(GPIOB, board0.inputHardwareAddress, mcp23s17_fd);
+				case 0x01: // board 0 port A
+					debugPrint("Interrupt from board 0 Port A\n");
+					pthread_mutex_lock(&spiLock);
+					gpio = mcp23s17_read_reg(GPIOA, board0.inputHardwareAddress, mcp23s17_fd);
+					pthread_mutex_unlock(&spiLock);
+					bitPos = setBit(gpio);
+					if(bitPos != 0xFF)
+					{
+						printf("Bit set = %d\n", bitPos);
+					}
 					break;
-				case 0xC: // board 1 port A and B
-					debugPrint("Interrupt from board 1\n");
-					gpioA = mcp23s17_read_reg(GPIOA, board1.inputHardwareAddress, mcp23s17_fd);
-					gpioB = mcp23s17_read_reg(GPIOB, board1.inputHardwareAddress, mcp23s17_fd);
+				case 0x02: // board 0 port B
+					debugPrint("Interrupt from board 0 Port B\n");
+					pthread_mutex_lock(&spiLock);
+					gpio = mcp23s17_read_reg(GPIOB, board0.inputHardwareAddress, mcp23s17_fd);
+					pthread_mutex_unlock(&spiLock);
+					bitPos = setBit(gpio);
+					if(bitPos != 0xFF)
+					{
+						printf("Bit set = %d\n", bitPos);
+					}
 					break;
-				case 0x30: // board 2 port A and B
-					debugPrint("Interrupt from board 2\n");
-					gpioA = mcp23s17_read_reg(GPIOA, board2.inputHardwareAddress, mcp23s17_fd);
-					gpioB = mcp23s17_read_reg(GPIOB, board2.inputHardwareAddress, mcp23s17_fd);
+				case 0x04: // board 1 port A
+					debugPrint("Interrupt from board 1 Port A\n");
+					pthread_mutex_lock(&spiLock);
+					gpio = mcp23s17_read_reg(GPIOA, board1.inputHardwareAddress, mcp23s17_fd);
+					pthread_mutex_unlock(&spiLock);
+					bitPos = setBit(gpio);
+					if(bitPos != 0xFF)
+					{
+						printf("Bit set = %d\n", bitPos);
+					}
+					break;
+				case 0x08: // board 1 port B
+					debugPrint("Interrupt from board 1 Port B\n");
+					pthread_mutex_lock(&spiLock);
+					gpio = mcp23s17_read_reg(GPIOB, board1.inputHardwareAddress, mcp23s17_fd);
+					pthread_mutex_unlock(&spiLock);
+					bitPos = setBit(gpio);
+					if(bitPos != 0xFF)
+					{
+						printf("Bit set = %d\n", bitPos);
+					}
+					break;
+				case 0x10: // board 2 port A
+					debugPrint("Interrupt from board 2 Port A\n");
+					pthread_mutex_lock(&spiLock);
+					gpio = mcp23s17_read_reg(GPIOA, board2.inputHardwareAddress, mcp23s17_fd);
+					pthread_mutex_unlock(&spiLock);
+					bitPos = setBit(gpio);
+					if(bitPos != 0xFF)
+					{
+						printf("Bit set = %d\n", bitPos);
+						a5 = newIoLoc(&board2, GPIOA, 0x10);
+						createNewThread(&head, toggleOutput, a5);
+					}
+					break;
+				case 0x20: // board 2 port B
+					debugPrint("Interrupt from board 2 Port B\n");
+					pthread_mutex_lock(&spiLock);
+					gpio = mcp23s17_read_reg(GPIOB, board2.inputHardwareAddress, mcp23s17_fd);
+					pthread_mutex_unlock(&spiLock);
+					bitPos = setBit(gpio);
+					
+					if(bitPos != 0xFF)
+					{
+						a4 = newIoLoc(&board2, GPIOA, 0x10);
+						createNewThread(&head, toggleOutput, a4);
+						printf("Bit set = %d\n", bitPos);
+					}
 					break;
 				default:
-					debugPrint("Unknown interrupt values\n");
-					gpioA = mcp23s17_read_reg(GPIOA, board0.inputHardwareAddress, mcp23s17_fd);
-					gpioB = mcp23s17_read_reg(GPIOB, board0.inputHardwareAddress, mcp23s17_fd);
-					gpioA = mcp23s17_read_reg(GPIOA, board1.inputHardwareAddress, mcp23s17_fd);
-					gpioB = mcp23s17_read_reg(GPIOB, board1.inputHardwareAddress, mcp23s17_fd);
-					gpioA = mcp23s17_read_reg(GPIOA, board2.inputHardwareAddress, mcp23s17_fd);
-					gpioB = mcp23s17_read_reg(GPIOB, board2.inputHardwareAddress, mcp23s17_fd);
+					debugPrint("[ERROR]: Unknown interrupt values\n");
+					pthread_mutex_lock(&spiLock);
+					gpio = mcp23s17_read_reg(GPIOA, board0.inputHardwareAddress, mcp23s17_fd);
+					gpio = mcp23s17_read_reg(GPIOB, board0.inputHardwareAddress, mcp23s17_fd);
+					gpio = mcp23s17_read_reg(GPIOA, board1.inputHardwareAddress, mcp23s17_fd);
+					gpio = mcp23s17_read_reg(GPIOB, board1.inputHardwareAddress, mcp23s17_fd);
+					gpio = mcp23s17_read_reg(GPIOA, board2.inputHardwareAddress, mcp23s17_fd);
+					gpio = mcp23s17_read_reg(GPIOB, board2.inputHardwareAddress, mcp23s17_fd);
+					pthread_mutex_unlock(&spiLock);
 					break;
 			}
 		}

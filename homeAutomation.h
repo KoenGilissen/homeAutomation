@@ -44,6 +44,9 @@ void * dummyFunc(void *d);
 void cleanUpThreadItem(threadInstance **el);
 ioLoc * newIoLoc(ioBoard_t *board, uint8_t port, uint8_t bit);
 void printOutputThreadList(threadInstance **head);
+void * inputWatch(void * arg);
+
+uint8_t setBit(uint8_t num);
 
 
 #endif
